@@ -374,6 +374,15 @@
       <input type="text" id="devVer" class="ltr" placeholder="1.2.0" autocomplete="off" spellcheck="false">
       <p class="hint">برای اینکه معلوم شود اپ شما آپدیت لازم دارد. نسخه را از بخش «درباره»ی اپ ببینید.</p>
     </div>
+        <div id="devPathBox" hidden>
+      <label class="field" for="devPath" style="margin-top:10px">مسیر این دوره روی این دستگاه (اختیاری)</label>
+      <div class="inline">
+        <input type="text" id="devPath" class="ltr" placeholder="/storage/emulated/0/Courses/Python" autocomplete="off" spellcheck="false">
+        <button class="btn secondary" type="button" id="devPick">انتخاب پوشه…</button>
+      </div>
+      <p class="hint" id="devPickStatus" role="status"></p>
+      <p class="hint">پنجره‌ی «انتخاب پوشه…» فقط پوشه‌های همین کامپیوتر را نشان می‌دهد. برای گوشی یا دستگاه دیگر معمولاً مسیر را همان‌طور که روی خودِ آن دستگاه است بنویسید.</p>
+    </div>
     <p class="field-err" id="devErr" role="alert"></p>
     <div class="dlg-actions">
       <button class="btn" type="submit">ذخیره</button>
@@ -760,18 +769,24 @@ function fillDeviceRows(p, keepTyped = false) {
   pdInputs = new Map();
   pd.otherRows.replaceChildren(...others.map(d => {
     const saved = p ? activePathOf(p, d.id) : '';
-    const input = el('input', { type: 'text', class: 'ltr', value: kept.has(d.id) ? kept.get(d.id) : saved,
+    const input = el('input', { type: 'text', class: 'ltr', id: 'pdo-' + d.id, value: kept.has(d.id) ? kept.get(d.id) : saved,
                                 placeholder: PATH_EXAMPLE[d.platform] || '', autocomplete: 'off', spellcheck: 'false' });
     pdInputs.set(d.id, input);
-    return el('label', { class: 'field' },
-      el('span', {}, el('span', { dir: 'auto', text: d.name }), ' ',
+    const status = el('p', { class: 'hint', role: 'status', style: 'margin:0' });
+    const pickBtn = el('button', { class: 'btn secondary', type: 'button', text: 'انتخاب پوشه…',
+                                   onclick: () => pickInto(input, pickBtn, sayTo(status)) });
+    return el('div', { class: 'field' },
+      el('label', { for: 'pdo-' + d.id },
+        el('span', { dir: 'auto', text: d.name }), ' ',
         el('span', { class: 'chip', text: PLATFORM_LABEL[d.platform] || d.platform }), ' ',
         saved ? el('span', { class: 'chip ok', text: 'مسیر ثبت شده' }) : el('span', { class: 'chip warn', text: 'مسیر ندارد' })),
-      input);
+      el('div', { class: 'inline' }, input, pickBtn),
+      status);
   }));
-  pd.othersHint.textContent = others.length
-    ? 'مسیر هر دستگاه جدا ذخیره می‌شود؛ تغییر مسیرِ این دستگاه، مسیرِ دستگاه‌های دیگر را عوض نمی‌کند. مسیر دستگاه‌های دیگر همین‌جا بررسی نمی‌شود. برای چند مسیر روی یک دستگاه یا حذف یک مسیر، تب «مسیرها» را باز کنید.'
-    : 'دستگاه دیگری ثبت نشده. اگر همین دوره روی گوشی یا کامپیوتر دیگری هم هست، «افزودن دستگاه دیگر» را بزنید و مسیرش را جدا وارد کنید.';
+  pd.othersHint.textContent = (others.length
+    ? 'مسیر هر دستگاه جدا ذخیره می‌شود؛ تغییر مسیرِ این دستگاه، مسیرِ دستگاه‌های دیگر را عوض نمی‌کند و مسیر دستگاه‌های دیگر همین‌جا بررسی نمی‌شود. برای چند مسیر روی یک دستگاه یا حذف یک مسیر، تب «مسیرها» را باز کنید. '
+    : 'دستگاه دیگری ثبت نشده. اگر همین دوره روی گوشی یا کامپیوتر دیگری هم هست، «افزودن دستگاه دیگر» را بزنید و مسیرش را جدا وارد کنید. ')
+    + 'پنجره‌ی «انتخاب پوشه…» فقط پوشه‌های همین کامپیوتر را نشان می‌دهد؛ برای گوشی یا دستگاه دیگر معمولاً مسیر را همان‌طور که روی خودِ آن دستگاه است بنویسید.';
   pdCands = p && mine ? others.filter(d => d.platform === mine.platform && activePathOf(p, d.id))
     .map(d => ({ name: d.name, path: activePathOf(p, d.id) })) : [];
 }
@@ -808,12 +823,16 @@ pd.redetect.addEventListener('click', async () => {
   finally { pd.redetect.disabled = false; }
 });
 
-/* افزودن دستگاه (مثلاً گوشی) بدون خروج از این پنجره */
-pd.addDevice.addEventListener('click', () => openDeviceDialog(null, () => {
+/* افزودن دستگاه (مثلاً گوشی) بدون خروج از این پنجره؛ مسیر دوره روی آن را هم می‌شود همان‌جا داد */
+pd.addDevice.addEventListener('click', () => openDeviceDialog(null, (dev, path) => {
   state.devices = state.profile.devices;
   fillDeviceRows(editing, true);
+  const input = dev && pdInputs.get(dev.id);
+  if (input && path) input.value = path;
   updateDirHints();
-  pd.devStatus.textContent = 'دستگاه اضافه شد؛ مسیر دوره روی آن را در بخش «مسیر روی دستگاه‌های دیگر» بنویسید.';
+  pd.devStatus.textContent = input && path
+    ? 'دستگاه اضافه شد و مسیرش در بخش «مسیر روی دستگاه‌های دیگر» پر شد؛ برای ثبت، «ذخیره» را بزنید.'
+    : 'دستگاه اضافه شد؛ مسیر دوره روی آن را در بخش «مسیر روی دستگاه‌های دیگر» بنویسید.';
 }));
 
 /* اگر در پنجره «شناسایی مجدد» زده شد، صفحه‌ی پشتش هم تازه شود */
@@ -1445,9 +1464,9 @@ function deviceBlock(dev) {
       : el('p', { class: 'muted', text: 'برای این دستگاه هنوز مسیری ثبت نشده است.' })),
     el('form', { class: 'locadd', onsubmit: e => { e.preventDefault(); addLocation(dev, input.value); } },
       input,
-      here ? el('button', { class: 'btn secondary', type: 'button', text: 'انتخاب پوشه…', onclick: e => pickFolderFor(input, e.currentTarget) }) : null,
+      el('button', { class: 'btn secondary', type: 'button', text: 'انتخاب پوشه…', onclick: e => pickFolderFor(input, e.currentTarget) }),
       el('button', { class: 'btn', type: 'submit', text: 'افزودن مسیر' })),
-    here ? null : el('p', { class: 'hint', text: 'این مسیر برای دستگاه دیگری است؛ همین‌جا بررسی نمی‌شود و فقط ذخیره می‌شود.' }));
+    here ? null : el('p', { class: 'hint', text: 'این مسیر برای دستگاه دیگری است؛ همین‌جا بررسی نمی‌شود و فقط ذخیره می‌شود. پنجره‌ی «انتخاب پوشه…» فقط پوشه‌های همین کامپیوتر را نشان می‌دهد.' }));
 }
 
 function locRow(dev, l, here) {
@@ -1456,7 +1475,7 @@ function locRow(dev, l, here) {
     const input = el('input', { type: 'text', class: 'ltr', value: l.path, autocomplete: 'off', spellcheck: 'false', 'aria-label': 'مسیر' });
     return el('form', { class: 'locrow', onsubmit: e => { e.preventDefault(); editLocation(l, input.value); } },
       input,
-      here ? el('button', { class: 'btn secondary', type: 'button', text: 'انتخاب پوشه…', onclick: e => pickFolderFor(input, e.currentTarget) }) : null,
+      el('button', { class: 'btn secondary', type: 'button', text: 'انتخاب پوشه…', onclick: e => pickFolderFor(input, e.currentTarget) }),
       el('button', { class: 'btn', type: 'submit', text: 'ذخیره' }),
       el('button', { class: 'btn secondary', type: 'button', text: 'انصراف', onclick: () => { state.editLoc = null; renderLocations(); } }));
   }
@@ -1512,15 +1531,7 @@ async function saveLocations(locations, active, msg) {
   } finally { locBusy = false; }
 }
 
-async function pickFolderFor(input, btn) {
-  btn.disabled = true;
-  try {
-    const r = await api('/api/pick-folder', { method: 'POST', body: { initial: input.value.trim() } });
-    if (r.status === 'ok') input.value = r.path;
-    else if (r.status === 'unavailable') openFsDialog(input.value, path => { input.value = path; });
-  } catch (err) { toast(err.message, 'error'); }
-  finally { btn.disabled = false; }
-}
+function pickFolderFor(input, btn) { return pickInto(input, btn, sayToast); }
 
 /* ===================================================================
    صفحه‌ی حساب: پروفایل (ورود محلی)، دستگاه‌ها، اپ اندروید
@@ -1670,7 +1681,8 @@ function androidCard() {
 }
 
 const dv = { dlg: $('#devDialog'), form: $('#devForm'), title: $('#devTitle'), name: $('#devName'), platform: $('#devPlatform'),
-             verBox: $('#devVerBox'), ver: $('#devVer'), err: $('#devErr') };
+             verBox: $('#devVerBox'), ver: $('#devVer'), err: $('#devErr'),
+             pathBox: $('#devPathBox'), path: $('#devPath'), pick: $('#devPick'), pickStatus: $('#devPickStatus') };
 let devEditing = null;
 dv.platform.replaceChildren(...Object.entries(PLATFORM_LABEL).map(([k, v]) => el('option', { value: k, text: v })));
 dv.platform.addEventListener('change', () => { dv.verBox.hidden = dv.platform.value !== 'android'; });
@@ -1678,6 +1690,9 @@ let afterDeviceSaved = null;
 function openDeviceDialog(dev, after = null) {
   devEditing = dev;
   afterDeviceSaved = after;
+  dv.pathBox.hidden = !after;                 // فیلد مسیر فقط وقتی از پنجره‌ی برنامه باز شده
+  dv.path.value = '';
+  dv.pickStatus.replaceChildren();
   dv.title.textContent = dev ? 'ویرایش دستگاه' : 'دستگاه جدید';
   dv.name.value = dev ? dev.name : '';
   dv.platform.value = dev ? dev.platform : 'android';
@@ -1695,21 +1710,24 @@ dv.form.addEventListener('submit', async e => {
     state.profile = devEditing
       ? await api('/api/profile/devices/' + enc(devEditing.id), { method: 'PATCH', body })
       : await api('/api/profile/devices', { method: 'POST', body });
+    const newDev = devEditing ? null : state.profile.devices[state.profile.devices.length - 1];
+    const path = dv.pathBox.hidden ? '' : cleanPath(dv.path.value);
     dv.dlg.close();
     await refreshAccount();
     const cb = afterDeviceSaved; afterDeviceSaved = null;
-    if (cb) cb();
+    if (cb) cb(newDev, path);
     toast('دستگاه ذخیره شد.', 'ok');
   } catch (err) { dv.err.textContent = err.message; }
 });
 $('#devCancel').addEventListener('click', () => dv.dlg.close());
 
 /* ===================================================================
-   /* ===================================================================
-   انتخاب پوشه: فقط پنجره‌ی خودِ سیستم (اگر در دسترس نبود، مسیر را باید نوشت)
+   انتخاب پوشه: فقط پنجره‌ی خودِ سیستم، و همیشه فقط یک پنجره در هر زمان
+   (اگر پنجره‌ی سیستم در دسترس نبود، مسیر را باید نوشت)
    =================================================================== */
-let pickSeq = 0;
+let pickSeq = 0, pickBusy = false;
 const NO_PICKER_MSG = 'پنجره‌ی انتخاب پوشه روی این سیستم در دسترس نیست؛ مسیر را بنویسید یا جای‌گذاری کنید.';
+const PICK_BUSY_MSG = 'یک پنجره‌ی انتخاب پوشه از قبل باز است؛ اول آن را ببندید.';
 function resetPick() { pd.pick.disabled = false; pd.pickStatus.replaceChildren(); }
 function setDirValue(path) {
   pd.dir.value = path;
@@ -1718,23 +1736,35 @@ function setDirValue(path) {
   pd.submit.focus();
 }
 
-async function pickFolder() {
+/* پیام زیر یک دکمه: say(متن، درحال‌انتظار)؛ متن خالی = پاک کردن پیام */
+const sayTo = box => (text, spin) => box.replaceChildren(
+  ...(spin ? [el('span', { class: 'spin', 'aria-hidden': 'true' })] : []), ...(text ? [text] : []));
+/* در تب «مسیرها» پنجره‌ی مودال نیست، پس پیام‌ها toast می‌شوند */
+const sayToast = text => { if (text) toast(text, 'info'); };
+
+/* تنها راه باز کردن پنجره‌ی انتخاب پوشه؛ نتیجه در input می‌نشیند. */
+async function pickInto(input, btn, say, onPick) {
+  if (pickBusy) { say(PICK_BUSY_MSG); return; }
   const my = ++pickSeq;
-  pd.pick.disabled = true;
-  pd.pickStatus.replaceChildren(el('span', { class: 'spin', 'aria-hidden': 'true' }), 'پنجره‌ی انتخاب پوشه باز شد…');
+  pickBusy = true;
+  btn.disabled = true;
+  say('پنجره‌ی انتخاب پوشه باز شد…', true);
   try {
-    const r = await api('/api/pick-folder', { method: 'POST', body: { initial: pd.dir.value.trim() } });
-    if (my !== pickSeq) return;
-    resetPick();
-    if (r.status === 'ok') setDirValue(r.path);
-    else if (r.status === 'unavailable') pd.pickStatus.textContent = NO_PICKER_MSG;
+    const r = await api('/api/pick-folder', { method: 'POST', body: { initial: input.value.trim() } });
+    if (my !== pickSeq) return;                 // پنجره‌ی برنامه دوباره باز شده؛ نتیجه‌ی کهنه نادیده گرفته می‌شود
+    say('');
+    if (r.status === 'ok') { input.value = r.path; if (onPick) onPick(r.path); }
+    else if (r.status === 'unavailable') say(NO_PICKER_MSG);
+    else if (r.status === 'busy') say(PICK_BUSY_MSG);
   } catch (err) {
-    if (my !== pickSeq) return;
-    resetPick();
-    pd.formErr.textContent = err.message;
+    if (my === pickSeq) say(err.message);
+  } finally {
+    pickBusy = false;
+    btn.disabled = false;
   }
 }
-pd.pick.addEventListener('click', pickFolder);
+pd.pick.addEventListener('click', () => pickInto(pd.dir, pd.pick, sayTo(pd.pickStatus), setDirValue));
+dv.pick.addEventListener('click', () => pickInto(dv.path, dv.pick, sayTo(dv.pickStatus)));
 
 /* ===================================================================
    پلیر، پخش ویدیو و زمان توقف

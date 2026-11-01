@@ -54,13 +54,14 @@ def _run(cmd: list, timeout: int = 900):
     except (OSError, subprocess.SubprocessError):
         return None
 
+_PICK_LOCK = threading.Lock()      # فقط یک پنجره‌ی انتخاب پوشه در هر زمان (کلیک هم‌زمان = پنجره‌ی دوم نمی‌آید)
 
 # پیام‌هایی که یعنی «این ابزار اصلاً نتوانست پنجره را نشان بدهد» (نه این‌که کاربر انصراف داده باشد)
 _PICKER_BROKEN = ("cannot open display", "unable to init server", "no protocol specified",
                   "could not connect to display", "failed to open display", "no module named", "traceback")
 
 
-def pick_folder_native(initial: str = "", title: str = "انتخاب پوشه‌ی دوره"):
+def _pick_folder_native(initial: str = "", title: str = "انتخاب پوشه‌ی دوره"):
     """
     پنجره‌ی انتخاب پوشه‌ی خود سیستم را باز می‌کند (تا انتخاب یا انصراف منتظر می‌ماند).
     خروجی: ("ok", مسیر) | ("cancel", None) | ("unavailable", None)
@@ -96,6 +97,15 @@ def pick_folder_native(initial: str = "", title: str = "انتخاب پوشه‌
             return "cancel", None
         # ابزار واقعاً خراب بود (مثلاً tkinter نصب نیست یا صفحه‌ی نمایش در دسترس نیست)؛ سراغ ابزار بعدی
     return "unavailable", None
+
+def pick_folder_native(initial: str = "", title: str = "انتخاب پوشه‌ی دوره"):
+    """وضعیت: ok | cancel | unavailable | busy (یک پنجره‌ی انتخاب پوشه از قبل باز است)"""
+    if not _PICK_LOCK.acquire(blocking=False):
+        return "busy", None
+    try:
+        return _pick_folder_native(initial, title)
+    finally:
+        _PICK_LOCK.release()
 
 def fs_roots() -> List[str]:
     if os.name == "nt":
