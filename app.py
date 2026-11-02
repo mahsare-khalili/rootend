@@ -655,6 +655,7 @@ def update_program(cid: str, req: ProgramPatch):
     new_report = None
     if dir_changed or req.rescan:
         new_report = scan_directory(wanted[here] if dir_changed else current["directory"])
+        new_report = rebase_root(new_report, report)
 
     with write_lock:
         meta = read_optional(course_file(cid, "meta")) or {}
@@ -730,7 +731,7 @@ def put_locations(cid: str, req: LocationsRequest):
     new_here = path_for(locs, active, here)
     new_report = None
     if new_here and (not old_here or norm_path(new_here) != norm_path(old_here)):
-        new_report = scan_directory(new_here)        # خطا بدهد، چیزی ذخیره نمی‌شود
+        new_report = rebase_root(scan_directory(new_here), report)   # خطا بدهد، چیزی ذخیره نمی‌شود
 
     with write_lock:
         meta = read_optional(course_file(cid, "meta")) or {}
@@ -1495,6 +1496,37 @@ def relocate_program(cid: str):
     return {"found": res["ok"], "code": None if res["ok"] else res["code"], "message": " ".join(parts),
             "device": {k: det[k] for k in ("status", "id", "name")}, "profile": det["profile"],
             "program": summarize(cid, meta, report, plan)}
+
+def rebase_root(new_report: dict, old_report: Optional[dict]) -> dict:
+    """
+    نام پوشه‌ی ریشه در مسیر ویدیوها (قسمت اول «Course/a/b.mp4») فقط یک برچسب است و روی هر دستگاه ممکن است فرق کند
+    (Python Web / Python_Web). اگر گزارش قبلی هست، همان برچسب را نگه می‌داریم تا اسکن از یک دستگاه دیگر، برنامه‌ی
+    روزانه و تیک‌ها را ناهم‌خوان نکند. شناسه‌ی واقعی هر ویدیو «مسیر داخل دوره» (tail) است.
+    """
+    try:
+        old_root, new_root = old_report["tree"]["path"], new_report["tree"]["path"]
+    except (KeyError, TypeError):
+        return new_report
+    if not old_root or old_root == new_root:
+        return new_report
+
+    def fix(path: str) -> str:
+        if path == new_root or path.startswith(new_root + "/"):
+            return old_root + path[len(new_root):]
+        return path
+
+    def walk(node: dict) -> None:
+        node["path"] = fix(node["path"])
+        for v in node.get("videos", []):
+            v["path"] = fix(v["path"])
+        for sub in node.get("subdirectories", []):
+            walk(sub)
+
+    walk(new_report["tree"])
+    new_report["tree"]["name"] = old_report["tree"].get("name", old_root)
+    for f in new_report.get("failed_files", []):
+        f["path"] = fix(f["path"])
+    return new_report
 
 if __name__ == "__main__":
     import uvicorn
